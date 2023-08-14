@@ -51,7 +51,7 @@ func NewDefaultLogger(debug bool) *DefaultLogger {
 func (l *DefaultLogger) getFileName() string {
 	_, file, line, _ := runtime.Caller(2)
 	fileName := filepath.Base(file)
-	return fmt.Sprintf("[%s:%d] ", fileName, line)
+	return fmt.Sprintf("[%s:%d]\t", fileName, line)
 }
 
 func (l *DefaultLogger) Info(format string, v ...any) {
