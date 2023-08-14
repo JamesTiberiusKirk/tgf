@@ -10,7 +10,6 @@ import (
 var (
 	CouldNotExteactContextErr = errors.New("could not extract context")
 	UserErr                   = errors.New("user error")
-	// TODO: Maybe think of making some error which would posibly just skip direclty to next handler?
 )
 
 func InitBotAPI(token string, telegramWebHookURL string, debug bool) (*tgbotapi.BotAPI, error) {
@@ -69,7 +68,7 @@ func (b *Bot) StartBot(debug bool) error {
 }
 
 func (b *Bot) handleUpdate(update tgbotapi.Update) {
-	b.log.SetUpdate(update)
+	b.log.LogUpdate(update)
 	if update.Message == nil && update.CallbackQuery == nil {
 		return
 	}
@@ -92,6 +91,7 @@ func (b *Bot) handleUpdate(update tgbotapi.Update) {
 		Update:         update,
 		nextHasBeenSet: false,
 		Log:            b.log,
+		bot:            b.bot,
 	}
 	chatID := ctx.GetChatID()
 
@@ -101,7 +101,6 @@ func (b *Bot) handleUpdate(update tgbotapi.Update) {
 		ctx.Journey.Command = c
 		ctx.Journey.Next = 0
 		ctx.Journey.TelegramChatID = chatID
-
 	} else {
 		j, err := b.journeyStore.GetJourneyByChatID(chatID)
 		if err != nil {
@@ -176,7 +175,18 @@ func (b *Bot) createCallbacks(ctx *Context) {
 	}
 
 	ctx.exit = func() {
-		b.log.Debug("[SCHEDULER]: cleaning up index: %s", ctx.Journey.Next)
+		if len(ctx.Journey.MessagesCleanup) > 0 {
+			b.log.Debug("[CLEANUP]: message(s) to delete: %d", len(ctx.Journey.MessagesCleanup))
+			for _, messageID := range ctx.Journey.MessagesCleanup {
+				deleteMsg := tgbotapi.NewDeleteMessage(ctx.GetChatID(), messageID)
+				_, err := b.bot.Request(deleteMsg)
+				if err != nil {
+					b.log.Error("[BOT ERROR]: trying to cleanup messages: %w", err)
+				}
+			}
+		}
+
+		b.log.Debug("[SCHEDULER]: cleaning up index: %d", ctx.Journey.Next)
 		err := b.journeyStore.CleanupChatJourney(ctx.GetChatID())
 		if err != nil {
 			b.log.Error("[DB ERROR]: trying to cleanup handler journey DB: %w", err)
@@ -205,7 +215,7 @@ func (b *Bot) handleHandlerError(ctx *Context, err error) {
 		return
 	}
 
-	b.log.Debug("[SCHEDULER]: cleaning up index: %s", ctx.Journey.Next)
+	b.log.Debug("[SCHEDULER]: cleaning up index: %d", ctx.Journey.Next)
 	err = b.journeyStore.CleanupChatJourney(ctx.GetChatID())
 	if err != nil {
 		b.log.Error("[DB ERROR]: trying to cleanup handler journey DB: %w", err)

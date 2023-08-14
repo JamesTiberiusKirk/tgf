@@ -20,17 +20,16 @@ type Context struct {
 	// Log instance of Logger initialised with the update
 	Log Logger
 
-	// This object is meant to be for injecting dependencies
-	// injected map[string]interface{}
-
-	// handleError func(err error)
-	// execHandler func()
-
 	handlers       []HandlerFunc
 	nextHasBeenSet bool
 	skipTo         func(int)
 	exit           func()
 	changeJourney  func(string, int)
+	bot            *tgbotapi.BotAPI
+}
+
+func (ctx *Context) AddMsgToCleanup(messageID int) {
+	ctx.Journey.MessagesCleanup = append(ctx.Journey.MessagesCleanup, messageID)
 }
 
 // GetChatID - returns chatid from the message with GetMessage(), returns 0 if no message found
