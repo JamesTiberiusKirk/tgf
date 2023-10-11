@@ -50,7 +50,6 @@ func (b *Bot) StartBot(debug bool) error {
 		b.log = NewDefaultLogger(debug)
 	}
 
-	b.log.Info("DEV VERSION OF THE TGF")
 	b.log.Info("Authorized on account %s", b.bot.Self.UserName)
 
 	_, err := b.bot.Request(b.commands)
