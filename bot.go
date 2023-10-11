@@ -50,6 +50,7 @@ func (b *Bot) StartBot(debug bool) error {
 		b.log = NewDefaultLogger(debug)
 	}
 
+	b.log.Info("DEV VERSION OF THE TGF")
 	b.log.Info("Authorized on account %s", b.bot.Self.UserName)
 
 	_, err := b.bot.Request(b.commands)
@@ -153,7 +154,7 @@ func (b *Bot) handleUpdate(update tgbotapi.Update) {
 	}
 
 	// if this is the last in the journey, cleanup
-	b.log.Debug("[SCHEDULER]: cleaning up index: %s", ctx.Journey.Next)
+	b.log.Debug("[SCHEDULER]: cleaning up journey for chat: %s", ctx.GetChatID())
 	err = b.journeyStore.CleanupChatJourney(chatID)
 	if err != nil {
 		b.log.Error("[DB ERROR]: trying to cleanup handler journey DB: %w", err)
@@ -170,7 +171,20 @@ func (b *Bot) createCallbacks(ctx *Context) {
 		}
 
 		ctx.Journey.Next = i
-		b.handleHandlerError(ctx, b.execHandler(ctx))
+		err := b.execHandler(ctx)
+		if err != nil {
+			b.log.Error("[HANDLER ERROR]: error executing next handler in skipBy: %w", err)
+			return
+		}
+
+		if ctx.Journey != nil {
+			b.log.Debug("[SCHEDULER]: cleaning up journey for chat: %d", ctx.GetChatID())
+			err = b.journeyStore.CleanupChatJourney(ctx.GetChatID())
+			if err != nil {
+				b.log.Error("[DB ERROR]: trying to cleanup handler journey DB: %w", err)
+				return
+			}
+		}
 		ctx.nextHasBeenSet = false
 	}
 
@@ -186,11 +200,13 @@ func (b *Bot) createCallbacks(ctx *Context) {
 			}
 		}
 
-		b.log.Debug("[SCHEDULER]: cleaning up index: %d", ctx.Journey.Next)
-		err := b.journeyStore.CleanupChatJourney(ctx.GetChatID())
-		if err != nil {
-			b.log.Error("[DB ERROR]: trying to cleanup handler journey DB: %w", err)
-			return
+		if ctx.Journey != nil {
+			b.log.Debug("[SCHEDULER]: cleaning up journey for chat: %d", ctx.GetChatID())
+			err := b.journeyStore.CleanupChatJourney(ctx.GetChatID())
+			if err != nil {
+				b.log.Error("[DB ERROR]: trying to cleanup handler journey DB: %w", err)
+				return
+			}
 		}
 
 		ctx.Journey = nil
@@ -207,19 +223,6 @@ func (b *Bot) createCallbacks(ctx *Context) {
 		}
 
 		ctx.Journey.Next = i
-	}
-}
-
-func (b *Bot) handleHandlerError(ctx *Context, err error) {
-	if err != nil {
-		return
-	}
-
-	b.log.Debug("[SCHEDULER]: cleaning up index: %d", ctx.Journey.Next)
-	err = b.journeyStore.CleanupChatJourney(ctx.GetChatID())
-	if err != nil {
-		b.log.Error("[DB ERROR]: trying to cleanup handler journey DB: %w", err)
-		return
 	}
 }
 
@@ -245,21 +248,21 @@ func (b *Bot) execHandler(ctx *Context) error {
 	chatID := ctx.GetChatID()
 
 	// journey exit
-	if ctx.Journey == nil {
+	if ctx.Journey == nil || ctx.handlers[ctx.Journey.Next] == nil {
 		return nil
 	}
 
 	err := ctx.handlers[ctx.Journey.Next](ctx)
 	if err != nil {
 		if err != UserErr {
-			b.log.Error("[HANDLER ERROR]: ", "chatID", chatID, "error", err)
+			b.log.Error("[HANDLER ERROR]: chatID %d, error: %w", chatID, err)
 			msg := tgbotapi.NewMessage(chatID, "Sorry, internal server error")
 			if _, err := b.bot.Send(msg); err != nil {
 				return fmt.Errorf("[HANDLER ERROR]: failed to send message %w", err)
 			}
 		}
 
-		b.log.Debug("[SCHEDULER]: cleaning up", "chatID", chatID, "index", ctx.Journey.Next)
+		b.log.Debug("[SCHEDULER]: cleaning up journey for chat: %d", chatID)
 		errCleanup := b.journeyStore.CleanupChatJourney(chatID)
 		if errCleanup != nil {
 			return fmt.Errorf("[HANDLER ERROR]: trying to cleanup handler journey %w", errCleanup)
